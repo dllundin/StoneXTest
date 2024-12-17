@@ -60,6 +60,7 @@ else
     public async Task SearchOrders(DateTime timestamp)
     {
         List<OrderDTO> results;
+        //Not the most efficient
         List<OrderDTO> TestData = (await ReadFromCSV())
             .Where(t => (DateTime.Parse(t.OrderDate)).ToString("yyyy-MM-dd HH:mm") == timestamp.ToString("yyyy-MM-dd HH:mm")).ToList();
 
