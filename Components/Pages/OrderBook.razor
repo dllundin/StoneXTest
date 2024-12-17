@@ -1,0 +1,133 @@
+﻿@page "/orderbook"
+@using StoneXTest.Data
+@using System.Text
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage ProtectedSessionStore
+@using Microsoft.Extensions.Configuration
+@inject IConfiguration Configuration
+
+@attribute [StreamRendering]
+
+<PageTitle>Order Book</PageTitle>
+
+<h1>Order Book</h1>
+
+<div>
+    <label>Select CSV data file/source</label>    
+    <InputFile OnChange="@LoadData"></InputFile>
+</div>
+<br />
+<div>
+    <label>Select Date/Time</label>
+    <InputDate Type="InputDateType.DateTimeLocal" min="2023-11-29" @bind-Value="@dateTime" />
+    <button class="btn btn-primary" onclick="@SearchOrders(dateTime);">Search Orders</button>
+</div>
+@if (!orders.Any())
+{
+    <p><em>No Data Available...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Side</th>
+                <th>Price ($)</th>
+                <th>Qty</th>
+                <th># of Orders</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var order in orders)
+            {
+                <tr>
+                    <td>@order.Side</td>
+                    <td>@order.Price</td>
+                    <td>@order.Qty</td>
+                    <td>@order.NumOfOrders</td>
+
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+@code {
+    DateTime dateTime = new DateTime(2023, 11, 29, 17, 0, 0);
+    List<OrderDTO> orders = new List<OrderDTO>();
+    
+    public async Task SearchOrders(DateTime timestamp)
+    {
+        List<OrderDTO> results;
+        List<OrderDTO> TestData = (await ReadFromCSV())
+            .Where(t => (DateTime.Parse(t.OrderDate)).ToString("yyyy-MM-dd HH:mm") == timestamp.ToString("yyyy-MM-dd HH:mm")).ToList();
+
+        results = TestData
+                .GroupBy(g => g.Price)
+                .Select(o => new OrderDTO
+                    {
+                        OrderDate = o.First().OrderDate,
+                        Qty = o.Count(),
+                        NumOfOrders = o.Sum(s => s.Qty),
+                        Price = o.First().Price,
+                        Side = o.First().Side
+                    }).OrderByDescending(o => o.Qty).ToList();
+
+        orders = results;
+    }
+
+    private async Task<List<OrderDTO>> ReadFromCSV()
+    {
+        List<OrderDTO> result = new List<OrderDTO>();
+
+        bool FirstRow = true;
+
+        using (var reader = new StreamReader(Configuration["FilePath"]))
+        {
+            while (!reader.EndOfStream)
+            {
+                var line = await reader.ReadLineAsync();
+                var values = line?.Split(',');
+                if (!FirstRow)
+                {
+                    result.Add(new OrderDTO()
+                        {
+                            OrderId = int.Parse(values[0]),
+                            Price = double.Parse(values[1]),
+                            Qty = int.Parse(values[2]),
+                            Side = values[3],
+                            OrderDate = values[4]
+                        });
+                }
+                FirstRow = false;
+            }
+        }
+        return result;
+    }
+
+    public async Task LoadData(InputFileChangeEventArgs e)
+    {
+        MemoryStream ms = new MemoryStream();
+        await e.File.OpenReadStream().CopyToAsync(ms);
+        var bytes = ms.ToArray();
+        string utfString = Encoding.UTF8.GetString(bytes, 0, bytes.Length);
+
+        var lines = utfString.Split(new string[] { Environment.NewLine }, StringSplitOptions.None);
+        List<OrderDTO>  orders = new List<OrderDTO>();
+
+        for (int i = 1; i < lines.Length - 1; i++)  //skip header row
+        {
+            var values = lines[i].Split(',');
+            orders.Add(new OrderDTO()
+                {
+                    OrderId = int.Parse(values[0]),
+                    Price = double.Parse(values[1]),
+                    Qty = int.Parse(values[2]),
+                    Side = values[3],
+                    OrderDate = values[4]
+                });
+        }
+        //await ProtectedSessionStore.SetAsync("data", orders);
+    }
+}
